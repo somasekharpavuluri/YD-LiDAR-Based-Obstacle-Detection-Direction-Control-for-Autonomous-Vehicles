@@ -1,0 +1,1051 @@
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+import random
+from datetime import datetime
+import sys
+from PyQt5.QtWebEngineWidgets import QWebEngineView
+
+# painter render hints
+_RENDER_HINTS = (
+    QPainter.RenderHint.Antialiasing
+    | QPainter.RenderHint.HighQualityAntialiasing
+    | QPainter.RenderHint.SmoothPixmapTransform
+    | QPainter.RenderHint.LosslessImageRendering
+    | QPainter.RenderHint.Qt4CompatiblePainting
+    | QPainter.RenderHint.NonCosmeticDefaultPen
+    | QPainter.RenderHint.TextAntialiasing
+)
+_dash_board = None
+class OnScreenKeyboard(QDialog):
+    keyPressed = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super(OnScreenKeyboard, self).__init__(parent, Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+        self.initUI()
+
+    def initUI(self):
+        layout = QGridLayout(self)
+        keys_layout = [
+            ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+            ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+            ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
+            ['Z', 'X', 'C', 'V', 'B', 'N', 'M', '.', '-', 'Backspace'],
+        ]
+
+        for i, row in enumerate(keys_layout):
+            for j, key in enumerate(row):
+                button = QPushButton(key)
+                button.setFixedSize(40, 40)
+                button.clicked.connect(lambda _, k=key: self.emitKeyPress(k))
+                layout.addWidget(button, i, j)
+        self.setFixedSize(400, 200)  # Adjust the size of the keyboard
+
+    def emitKeyPress(self, key):
+        self.keyPressed.emit(key)
+
+class MainWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+
+    def initUI(self):
+        self.layout = QVBoxLayout(self)
+
+        # Map View
+        self.map_view = QWebEngineView()
+        self.map_view.setUrl(QUrl("https://www.google.com/maps"))
+        self.layout.addWidget(self.map_view)
+
+        # GPS Button
+        self.gpsButton = QPushButton("GPS", self)
+        self.gpsButton.clicked.connect(self.showKeyboardWithMap)
+        self.layout.addWidget(self.gpsButton)
+
+        # On-Screen Keyboard
+        self.keyboard = OnScreenKeyboard(self)
+        self.keyboard.keyPressed.connect(self.handleKeyPress)
+        self.keyboard.hide()
+
+    def showKeyboardWithMap(self):
+        self.map_view.show()
+        self.keyboard.show()
+        self.positionKeyboard()
+
+    def positionKeyboard(self):
+        keyboardPos = self.map_view.mapToGlobal(QPoint(0, self.map_view.height()))
+        self.keyboard.move(keyboardPos.x(), keyboardPos.y())
+        self.keyboard.raise_()  # Bring the keyboard to the front
+
+    def handleKeyPress(self, key):
+        print(f"Key Pressed: {key}")
+
+
+
+class _DashBoardMain(QWidget):
+    """WARNING: This is a private class. do not import this."""
+   
+    def __init__(self, parent=None):
+        super(_DashBoardMain, self).__init__(parent)
+        self.initUI()
+
+    
+    def showKeyboard(self):
+        parent = self.parentWidget()
+        if parent and isinstance(parent, DashBoard):
+            parent.showKeyboard()
+   
+    def __init__(self, parent, size: tuple | list = (0, 0), hide_creator_button: bool = False,
+        skip_start_screen: bool = False, skip_loading_screen: bool = False, do_not_move: bool = False ):
+        super().__init__()
+        # Setting window to no icon, frameless and transparent
+        self.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAutoFillBackground(True)
+        self.setFixedSize(*size)
+        #self.showFullScreen()
+        
+ 
+        self.oldPos = QCursor().pos()
+        self.hide_creator_button = hide_creator_button
+        self.skip_start_screen = skip_start_screen
+        self.skip_loading_screen = skip_loading_screen
+        self.do_not_move = do_not_move
+    
+        self.initUI()
+                # Create a horizontal layout
+        self.layout = QHBoxLayout(self)
+
+        # Create the dashboard widget
+        self.swidget = QStackedWidget()
+        self.initUI()
+        self.layout.addWidget(self.swidget)
+
+        # Create the map view (initially hidden)
+        self.map_view = QWebEngineView()
+        self.map_view.setUrl(QUrl("https://www.google.com/maps"))
+        self.map_view.hide()
+        self.layout.addWidget(self.map_view)
+    def initUI(self):
+        self.stacked_widget()
+        self.start_screen()
+        self.loding_screen()
+        self.dash_board_design()
+        self.navigation_screen()
+        #self.gpsButton = QPushButton("GPS", self)
+        #self.gpsButton.clicked.connect(self.showKeyboard)
+        self.keyboardDialog = VirtualKeyboard(self)
+        if self.skip_loading_screen:
+           self.swidget.setCurrentIndex(2)
+           self.dash_board_design_widget.start_up_animation()
+        else:
+                self.progress_bar_animation.start()
+    def stacked_widget(self):
+        self.swidget = QStackedWidget(self)
+        self.swidget.setContentsMargins(0, 0, 0, 0)
+        grad = "qlineargradient(spread:pad, x1:0.6, y1:0.4, x2:0.1, y2:0.8, stop:0 {color1}, stop:{value} {color2}, stop:1.0 {color1});".format(
+            color1=QColor(0, 0, 0, 100).name(), color2=QColor(0, 0, 0).name(), value=0.5)
+        self.setStyleSheet("background-color: %s;"%grad)
+        self.swidget.setFixedSize(self.width(), self.height())
+        self.swidget.setCurrentIndex(0)
+       
+    def start_screen(self):
+        start_up_widget = QWidget()
+        start_up_widget.setFixedSize(self.width(), self.height())
+        self.swidget.addWidget(start_up_widget)
+
+        start_button = QPushButton("Start", start_up_widget)
+        start_button.setFixedSize(self.width()//5, self.width()//5)
+        start_button.move(self.rect().center()-start_button.rect().center())
+
+        grad = "qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 {color1}, stop:{value} {color2}, stop: 1.0 {color1});".format(
+            color1=QColor(240, 0, 0).name(), color2=QColor(255, 80, 0).name(), value=0.5)
+        hover_grad = "qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 {color1}, stop:{value} {color2}, stop: 1.0 {color1});".format(
+            color1=QColor(0, 240, 0).name(), color2=QColor(80, 255, 0).name(), value=0.5)
+        start_button_style = """QPushButton {background-color: %s; color: white; border-radius: %spx}
+                                QPushButton::hover {background-color: %s;}"""% (grad, str(self.width()//10), hover_grad)
+        start_button.setStyleSheet(start_button_style)
+
+        start_button_shadow = QGraphicsDropShadowEffect()
+        start_button_shadow.setBlurRadius(15)
+        start_button.setGraphicsEffect(start_button_shadow)
+
+        start_button_font = QFont("Consolas", 0, 0, True)
+        start_button_font.setBold(True)
+        start_button_font.setPixelSize(round(self.width()*0.05))
+        start_button.setFont(start_button_font)
+
+        start_button.clicked.connect(self.start_button_action)
+        
+        creator_info_button = QPushButton("C", start_up_widget)
+        creator_info_button.setContentsMargins(0, 0, 80, 0)
+        creator_info_button.setFixedSize(*map(round, (self.width()*0.05, self.width()*0.05)))
+        creator_info_button.move(self.rect().bottomRight()-creator_info_button.rect().bottomRight()-creator_info_button.rect().center())
+        
+        creator_info_font = QFont("Arial Black", 0, 0, True)
+        creator_info_font.setBold(True)
+        creator_info_font.setPixelSize(round(self.width()*0.03))
+        creator_info_button.setFont(creator_info_font)
+
+        creator_info_button_style = """QPushButton {background-color: rgba(0, 0, 0, 0); color: rgb(0, 0, 153); border-radius: %spx;}
+                                QPushButton::hover {color: rgb(0, 0, 255);}"""% str(round(creator_info_button.width()*0.5))
+        creator_info_button.setStyleSheet(creator_info_button_style)
+        creator_info_button.clicked.connect(self.creator_info_button_action)
+
+        creator_info_label = QLabel(start_up_widget)
+        creator_info_label.setContentsMargins(0, 0, 0, 0)
+        creator_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        creator_info_label.setFixedSize(*map(round, (self.width()*0.4, self.height()*0.1)))
+        creator_info_label.move(self.rect().center()-creator_info_label.rect().center()-QPoint(-round(self.width()*0.8), round(-self.height()//2+creator_info_label.height()*0.9)))
+        
+        grad = "qlineargradient(spread:pad, x1:0.5, y1:0.7, x2:1, y2:0, stop:0 {color1}, stop:{value} {color2}, stop: 1.0 {color2});".format(
+            color1=QColor(255, 153, 51).name(), color2=QColor(77, 77, 0).name(), value=0.5)
+        creator_info_label.setStyleSheet("background-color: %s; color: rgb(0, 255, 255)"% grad)
+
+        creator_info_font.setPixelSize(round(self.width()*0.015))
+        creator_info_label.setFont(creator_info_font)
+        creator_info_label.setWordWrap(True)
+        creator_info_label.setOpenExternalLinks(True)
+        creator_info_label.setText('<font color=FloralWhite>Creator info:</font> <br> <font color=Ivory>Name:</font> TEAM GAVISTI')
+
+        creator_info_button.setHidden(self.hide_creator_button)
+
+        self.creator_label_ani = QPropertyAnimation(creator_info_label, b"pos")
+        self.creator_label_ani.setStartValue(creator_info_label.pos())
+        self.creator_label_ani.setEndValue(QPoint(round(self.height()*0.55), creator_info_label.y()))
+        self.creator_label_ani.setDuration(600)
+        self.creator_label_ani.setDirection(1)
+
+    def creator_info_button_action(self):
+        self.creator_label_ani.setDirection(not self.creator_label_ani.direction())
+        self.creator_label_ani.start()
+
+    def start_button_action(self):
+        if self.skip_loading_screen:
+            self.swidget.setCurrentIndex(2)
+            self.dash_board_design_widget.start_up_animation()
+        else:
+            self.swidget.setCurrentIndex(1)
+            self.progress_bar_animation.start()
+
+    def loding_screen(self):
+        loading_screen_widget = QWidget()
+        loading_screen_widget.setContentsMargins(0, 0, 0, 0)
+        loading_screen_widget.setFixedSize(self.width(), self.height())
+        self.swidget.addWidget(loading_screen_widget)
+
+        get_ready_label = QLabel(loading_screen_widget)
+        get_ready_label.setFixedSize(*map(round, (self.width()*0.6, self.height()*0.2)))
+        get_ready_label.move(self.rect().center()-get_ready_label.rect().center()-QPoint(0, get_ready_label.height()))
+        get_ready_label.setStyleSheet("background-color: rgba(0, 0, 0, 0); color: rgb(207, 184, 29)")
+        get_ready_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        saftey_rule_font = QFont("Consolas", 0, 0, True)
+        saftey_rule_font.setBold(True)
+        saftey_rule_font.setPixelSize(round(self.width()*0.035))
+        get_ready_label.setFont(saftey_rule_font)
+        get_ready_label.setText("Get ready for the ride...")
+
+        loding_progress_bar = QProgressBar(loading_screen_widget)
+        loding_progress_bar.setContentsMargins(0, 0, 0, 0)
+        loding_progress_bar.setFixedSize(*map(round, (loading_screen_widget.width()*0.7, loading_screen_widget.height()*0.1)))
+        loding_progress_bar.move(self.rect().center()-loding_progress_bar.rect().center())
+        loding_progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        loding_progress_bar_font = QFont("Consolas", 0, 0, True)
+        loding_progress_bar_font.setBold(True)
+        loding_progress_bar_font.setPixelSize(round(self.width()*0.04))
+        loding_progress_bar.setFont(loding_progress_bar_font)
+
+        grad = "qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 {color1}, stop:{value} {color2}, stop: 1.0 {color3});".format(
+            color1=QColor(240, 0, 0).name(), color2=QColor(0, 80, 80).name(), color3=QColor(0, 0, 255).name(), value=0.3)
+        loding_progress_bar.setStyleSheet("QProgressBar {background-color: rgba(0, 0, 0, 0); color: white; border-radius: %spx;}"%str(loding_progress_bar.height()//2)
+            + "QProgressBar::chunk {background-color: %s; border-radius: %spx;}"%(grad, str(loding_progress_bar.height()//2)))
+
+        self.progress_bar_animation = QPropertyAnimation(loding_progress_bar, b"value")
+        self.progress_bar_animation.setStartValue(loding_progress_bar.height()*0.001)
+        self.progress_bar_animation.valueChanged.connect(self.driving_rule_info)
+        self.progress_bar_animation.setStartValue(0.1)
+        self.progress_bar_animation.setEndValue(100)
+        self.progress_bar_animation.setDuration(5000)
+
+        self.saftey_rules = ("Do not drink and drive.", "Always wear a helmet!", "Drive within the speed limits.", 
+                            "Don't use mobile phones while driving.", "Buckle up before you drive.", "Keep a safe distance from vehicles!")
+
+        self.saftey_rule_label = QLabel(loading_screen_widget)
+        self.saftey_rule_label.setFixedSize(*map(round, (self.width()*0.6, self.height()*0.2)))
+        self.saftey_rule_label.move(self.rect().center()-self.saftey_rule_label.rect().center()+QPoint(0, self.saftey_rule_label.height()))
+        self.saftey_rule_label.setStyleSheet("background-color: rgba(0, 0, 0, 0); color: yellow")
+        self.saftey_rule_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        saftey_rule_font = QFont("Consolas", 0, 0, True)
+        saftey_rule_font.setBold(True)
+        saftey_rule_font.setPixelSize(round(self.width()*0.025))
+        self.saftey_rule_label.setFont(saftey_rule_font)
+        self.saftey_rule_label.setText(random.sample(self.saftey_rules, 1)[0])
+
+    def driving_rule_info(self, val):
+        if val%33==0 and val!=99:
+            self.saftey_rule_label.setText(random.sample(self.saftey_rules, 1)[0])
+        if val==100:
+            self.swidget.setCurrentIndex(2)
+            self.dash_board_design_widget.start_up_animation()
+
+    def dash_board_design(self):
+        self.dash_board_design_widget = _DashBoardContolsDesign(self.swidget)
+        self.swidget.addWidget(self.dash_board_design_widget)
+          
+        # Add a navigation button and its handler in the dashboard design
+        self.navigation_button = QPushButton("GPS", self.dash_board_design_widget)
+        self.navigation_button.clicked.connect(self.on_navigation_clicked)
+        # Adjust the size and position of the button
+        self.navigation_button.setGeometry(1700,870, 180, 80)  # Adjust as necessary
+     #self.saftey_rule_label.setStyleSheet("background-color: rgba(255, 0,0, 0); color: black")
+       
+        self.navigation_button.setFixedSize(180, 90)
+        font = QFont()  # Create a new QFont object
+        font.setFamily("consolas")  # Set font family, e.g., Arial
+        font.setPointSize(36)
+        font.setItalic(True)# Set the font size (e.g., 16 points)
+        self.navigation_button.setFont(font)  # Apply the new font
+
+        # Set the style of the button to have blue text color and no border
+        self.navigation_button.setStyleSheet("QPushButton { color: red; border: none; }")
+
+        #self.navigation_button.clicked.connect(self.navigation_button_action)
+# Adjust size as needed
+        #self.navigation_button.move(100, 100)
+        # Adjust position as needed
+        # Set the font size of the button text
+      # Apply the new font
+      # Set the font size of the button text
+      # Apply the new font
+    def on_navigation_clicked(self):
+        # Open a new window for navigation
+        
+
+        if self.map_view.isVisible():
+           self.map_view.hide()
+           self.swidget.setFixedSize(self.width(), self.height())
+        else:
+            self.map_view.show()
+            # Reduce the size of the speedometer and GPS button area
+            # Adjust the sizing ratio as per your requirement
+            # Convert the width calculation to an integer
+            map_width = int(self.width() * 0.5)
+            #self.swidget.setFixedSize(new_width, self.height())
+            map_height = int(self.height() * 0.6)  # Example: 50% of the total height
+            self.map_view.setFixedSize(map_width, map_height)
+
+            # Adjust the position of the map view if needed
+            #self.map_view.move(0, self.height() - map_height) 
+    def mouseDoubleClickEvent(self, event):
+        pass
+
+    def mousePressEvent(self, event):
+        if not self.do_not_move: self.oldPos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        if not self.do_not_move:
+            delta = QPoint(event.globalPos() - self.oldPos)
+            self.move(self.x() + delta.x(), self.y() + delta.y())
+            self.oldPos = event.globalPos()
+     
+    def navigation_screen(self):
+        # Implementation of the navigation screen
+        self.navigation_widget = QWidget()
+        self.navigation_widget.setFixedSize(self.width(), self.height())
+        self.swidget.addWidget(self.navigation_widget)
+
+        navigation_button = QPushButton("NAVIGATION", self.navigation_widget)
+        navigation_button.setFixedSize(00, 00)  # Adjust size as needed
+        navigation_button.move(100, 10)  # Adjust position as needed
+        # Styling the button in a single line
+        #navigation_button.setStyleSheet("QPushButton {background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(0, 0, 13, 200), stop:1 qlineargradient(preset: FruitBlend)); color: black; border-radius: 10px; font-family: 'Consolas'; font-size: 18px; font-weight: bold;} QPushButton::hover {background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(67, 13, 13, 255), stop:1 qlineargradient(preset: CrystalRiver));}")
+        
+        
+        navigation_button.clicked.connect(self.navigation_button_action)
+    def navigation_button_action(self):
+        if self.skip_loading_screen:
+            self.swidget.setCurrentIndex(2)
+            self.dash_board_design_widget.navigation_up_animation()
+        else:
+            self.swidget.setCurrentIndex(1)
+            self.progress_bar_animation.navigation()
+            # Update the button style to match break and accelerator theme
+  
+
+class NavigationWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+         
+    def initUI(self):
+        self.setGeometry(1000, 100, 1800, 1100)  # Adjust as necessary
+        self.setWindowTitle('Navigation')
+
+        # Create a QWebEngineView widget to display the map
+        self.map_view = QWebEngineView(self)
+        self.map_view.setGeometry(0, 0, 1800, 1600)  # Adjust as necessary
+
+        # Load a map (e.g., OpenStreetMap, Google Maps, etc.)
+      #  self.map_view.setUrl(QUrl("https://www.openstreetmap.orgShow the navigati# Example URL
+class _DashBoardContolsDesign(QWidget):
+    """WARNING: This is a private class. do not import this."""
+    def __init__(self, parent=None):
+        super(_DashBoardContolsDesign, self).__init__(parent)
+        self.parent_ = parent
+        self.resize(self.parent_.size())
+        self.setContentsMargins(0, 0, 0, 0)
+
+        self.header_properties()
+        self.indicators_properties()
+        self.speed = 0
+
+       
+        self.speedometer_properties()
+
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHints(QPainter.Antialiasing)  # Or any other render hints you need
+
+        painter.setPen(QColor(0, 0, 255))  # Example: blue color
+
+        # Now, paint the navigation label
+        self.paintNavigationLabel(painter)
+
+    def paintNavigationLabel(self, painter: QPainter):
+        # Set up the font and color for the painter
+        nav_font = QFont("console", 40, QFont.Bold)
+        painter.setFont(nav_font)
+        
+        # Define the label's position and text
+        nav_label_rect = QRect(100, 100, 200, 50)  # Example dimensions and position
+        nav_text = "Navi"
+
+        # Draw the label
+        painter.drawText(nav_label_rect, Qt.AlignmentFlag.AlignCenter, nav_text)
+
+
+    def header_properties(self):
+        self.header_border_color_lst = (QColorConstants.Svg.orchid, QColorConstants.Svg.red)
+        self.header_border_color = 0
+
+        self.show_time = 0
+        self.time_update_timer = QTimer()
+        self.time_update_timer.timeout.connect(lambda: self.repaint())
+        self.time_update_timer.start(1000)
+
+        # drawing boarder
+        header_trans = QTransform()
+        header_trans.scale(self.width()*0.006, self.height()*0.005)
+        header_boarder = QPolygonF((QPointF(10, 10), QPointF(15, 10), QPointF(25, 25), 
+                                QPointF(55, 25), QPointF(65, 10), QPointF(70, 10),
+                                QPointF(60, 30), QPointF(20, 30)))
+        self.scaled_header_border = header_trans.map(header_boarder)
+        scaled_header_border_bounding_rect = QRect(self.scaled_header_border.boundingRect().toRect())
+        self.scaled_header_border.translate(self.rect().center()-scaled_header_border_bounding_rect.center())
+        self.scaled_header_border.translate(0, -self.rect().height()*0.2+scaled_header_border_bounding_rect.height()*0.2)
+
+        # drawing inner
+        header_inner = QPolygonF((QPointF(15, 10), QPointF(25, 25),
+                                QPointF(55, 25), QPointF(65, 10)))
+        self.scaled_header_inner = header_trans.map(header_inner)
+        scaled_header_inner_bounding_rect = QRect(self.scaled_header_inner.boundingRect().toRect())
+        self.scaled_header_inner.translate(self.rect().center()-scaled_header_inner_bounding_rect.center())
+        self.scaled_header_inner.translate(0, -self.rect().height()*0.2+scaled_header_inner_bounding_rect.height()*0.2)
+
+    def header_painting(self, painter: QPainter):
+        # drawing boarder
+        painter.setPen(QPen(QGradient(QGradient.Preset.Blessing), round(self.width()*0.0012), join=Qt.PenJoinStyle.MiterJoin))
+        painter.setBrush(QBrush(self.header_border_color_lst[self.header_border_color], Qt.BrushStyle.Dense4Pattern))
+        painter.drawPolygon(self.scaled_header_border)
+
+        # drawing inner
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(0, 0, 0, 0)))
+        painter.drawPolygon(self.scaled_header_inner)
+
+        painter.setPen(QPen(QGradient(QGradient.Preset.Blessing), round(self.width()*0.0012), join=Qt.PenJoinStyle.MiterJoin))
+        painter.drawPolygon(self.scaled_header_border)
+
+        # drawing time
+        now = datetime.now()
+
+        time_font = QFont("Consolas", 0, 0, True)
+        time_font.setPixelSize(round(self.width()*0.02))
+        time_fm = QFontMetrics(time_font)
+        time_rect = time_fm.boundingRect(now.strftime("%I:%M:%S%p %d %a"))
+        painter.setFont(time_font)
+
+        scaled_header_inner_bounding_rect = self.scaled_header_inner.boundingRect().toRect()
+        time_rect.moveCenter(scaled_header_inner_bounding_rect.center())
+
+        painter.setPen(QPen(QGradient(QGradient.Preset.FreshOasis), round(self.width()*0.0007)))
+        if self.show_time: painter.drawText(time_rect, Qt.AlignmentFlag.AlignCenter, now.strftime("%I:%M:%S%p %a %d"))
+
+    def indicators_properties(self):
+        self.indicator_timer = QTimer()
+        self.indicator_timer.timeout.connect(self.indicator_blink_animation)
+
+        self.indicator_color_list = (QColorConstants.Green, QColorConstants.Green)
+
+        self.right_indicator_color = self.indicator_color_list[0]
+        self.left_indicator_color = self.indicator_color_list[0]
+
+        self.right_indicator_state = 0
+        self.left_indicator_state = 0
+
+        self.right_indicator_blink = 0
+        self.left_indicator_blink = 0
+
+        # left indicator
+        indicator_trans = QTransform()
+        indicator_trans.scale(self.width()*0.001, self.height()*0.0015)
+        left_idicator = QPolygonF((QPointF(40, 80), QPointF(90, 120), QPointF(90, 100), QPointF(150, 100),
+                                    QPointF(150, 60), QPointF(90, 60), QPointF(90, 40)))
+        self.scaled_left_idicator = indicator_trans.map(left_idicator)
+        self.scaled_left_idicator.translate(-self.scaled_left_idicator.boundingRect().x(), -self.scaled_left_idicator.boundingRect().y())
+        self.scaled_left_idicator.translate(self.width()*0.03, self.height()*0.06)
+
+        # right indicator
+        rotate_t = QTransform()
+        rotate_t.rotate(180, Qt.Axis.YAxis)
+        self.scaled_right_idicator = self.scaled_left_idicator
+        self.scaled_right_idicator = rotate_t.map(self.scaled_right_idicator)
+        self.scaled_right_idicator.translate(-self.scaled_right_idicator.boundingRect().x(), -self.scaled_right_idicator.boundingRect().y())
+        self.scaled_right_idicator.translate(self.width()-self.scaled_right_idicator.boundingRect().width()-self.scaled_left_idicator.boundingRect().x(), self.height()*0.06)
+
+    def indicators_painting(self, painter: QPainter):
+        # drawing left indicator
+        painter.setPen(QPen(self.left_indicator_color, round(self.width()*0.0012), join=Qt.PenJoinStyle.MiterJoin))
+        painter.setBrush(QBrush(self.left_indicator_color, Qt.BrushStyle.Dense3Pattern))
+        painter.drawPolygon(self.scaled_left_idicator)
+        
+        # drawing right indicator
+        painter.setPen(QPen(self.right_indicator_color, round(self.width()*0.0012), join=Qt.PenJoinStyle.MiterJoin))
+        painter.setBrush(QBrush(self.right_indicator_color, Qt.BrushStyle.Dense3Pattern))
+        painter.drawPolygon(self.scaled_right_idicator)
+
+    def indicator_triger(self, indecator):
+        if indecator==0: # left indicator
+            self.left_indicator_state = not self.left_indicator_state
+        if indecator==1: # right indicator
+            self.right_indicator_state = not self.right_indicator_state
+
+        if self.right_indicator_state or self.left_indicator_state:
+            self.indicator_timer.start(600) # blink indicator interval of 600ms
+        else:
+            self.indicator_blink_animation()
+            self.indicator_timer.stop()
+            
+    def indicator_blink_animation(self):
+        if self.right_indicator_state:
+            self.right_indicator_color = self.indicator_color_list[self.right_indicator_blink]
+            self.right_indicator_blink = not self.right_indicator_blink
+        else:
+            self.right_indicator_color = self.indicator_color_list[0]
+
+        if self.left_indicator_state:
+            self.left_indicator_color = self.indicator_color_list[self.left_indicator_blink]
+            self.left_indicator_blink = not self.left_indicator_blink
+        else:
+            self.left_indicator_color = self.indicator_color_list[0]
+
+        self.repaint()
+
+
+
+
+
+       
+
+    def set_speed(self, val):
+        self.speed = round(val/self.speed_angle_factor) if round(val/self.speed_angle_factor)<=300 else 300
+        self.repaint()
+
+    def get_speed(self):
+        return round(self.speed*self.speed_angle_factor)
+
+
+    
+    def speedometer_properties(self):
+        self.speedometer_bounding_rect = QRectF(self.width()*0.005, self.height()*0.5, self.width()*0.35, self.width()*0.35)
+        
+        self.enable_speedometer_resetter = True
+
+        self.speedometer_resetter_timer = QTimer()
+        self.speedometer_resetter_timer.timeout.connect(self.speedometer_resetter)
+        self.speedometer_resetter_timer.start(5)
+
+        self.speed_range = 100
+        self.for_loop_count = self.speed_range//20 + 2
+        self.angle_to_rotate = 270/(self.speed_range/15)
+        self.compromise_angle = 30-self.angle_to_rotate
+        self.compromise_angle_half = self.compromise_angle+self.angle_to_rotate/2
+        self.enable_sub_number = True
+
+    def set_speedometer_range(self, top_speed):
+        if 40 <= top_speed <= 400:
+            self.speed_range = int(top_speed-top_speed%-20 if top_speed%20>=10 else top_speed-top_speed%20)
+        elif top_speed < 40: self.speed_range = 40
+        elif top_speed > 400: self.speed_range = 400
+
+        self.speed_angle_factor = self.speed_range/300
+        self.for_loop_count = self.speed_range//20 + 2
+        self.angle_to_rotate = 300/(self.speed_range/20)
+        self.compromise_angle = 30-self.angle_to_rotate
+        self.compromise_angle_half = self.compromise_angle+self.angle_to_rotate/2
+        self.enable_sub_number = True if self.speed_range<=260 else False
+        self.repaint()
+
+    def set_speedometer_resetter_state(self, val):
+        self.enable_speedometer_resetter = val
+
+    def speedometer_resetter(self):
+        if self.speed>0 and self.enable_speedometer_resetter:
+           # accelerator released
+           self.repaint()
+
+    def speedometer_painting(self, painter: QPainter):
+        # inner dial design
+        conicalGradient = QConicalGradient(QPointF(self.speedometer_bounding_rect.width()/2, self.speedometer_bounding_rect.width()/2), -59*16)
+        conicalGradient.setColorAt(0.2, QColorConstants.Green)
+        conicalGradient.setColorAt(0.7, QColorConstants.Yellow)
+        conicalGradient.setColorAt(0.5, QColorConstants.Red)
+        inner_dial = self.speedometer_bounding_rect.toRect()
+        inner_dial.setSize(QSizeF(self.speedometer_bounding_rect.width()*0.975, self.speedometer_bounding_rect.width()*0.975).toSize())
+        inner_dial.moveCenter(self.speedometer_bounding_rect.center().toPoint())
+        painter.setPen(QPen(conicalGradient, self.width()*0.01))
+        painter.drawArc(inner_dial, -59*16, 298*16)
+ 
+        # setting number font
+        number_font = QFont("Consolas", 0, 0, True)
+        number_font.setPixelSize(round(self.width()*0.02))
+        number_fm = QFontMetrics(number_font)
+        number_rect = number_fm.boundingRect("000")
+        painter.setFont(number_font)
+
+        # drawing main number and spike
+        painter.setPen(QPen(QGradient(QGradient.Preset.FebruaryInk), self.width()*0.005))
+        center = self.speedometer_bounding_rect.center()
+        painter.save()
+        painter.translate(center.x(), center.y())
+        painter.rotate(self.compromise_angle)
+        painter.translate(-center.x(), -center.y())
+        for a in range(1, self.for_loop_count):
+            painter.translate(center.x(), center.y())
+            painter.rotate(self.angle_to_rotate)
+            painter.translate(-center.x(), -center.y())
+            # spike
+            spike_p1 = center+QPointF(0, self.speedometer_bounding_rect.height()//2)
+            spike_p2 = center+QPointF(0, self.speedometer_bounding_rect.height()*0.45)
+            painter.drawLine(spike_p1, spike_p2)
+            # number
+            number_point = spike_p2.toPoint()-QPoint(0, round(self.width()*0.02))
+            painter.save()
+            painter.translate(number_point.x(), number_point.y())
+            painter.rotate(a*-self.angle_to_rotate-self.compromise_angle)
+            painter.translate(-number_point.x(), -number_point.y())
+            number_rect.moveCenter(number_point)
+            painter.drawText(number_rect, Qt.AlignmentFlag.AlignCenter, str((a-1)*20))
+            painter.restore()
+        painter.restore()
+
+        # drawing sub number and spike
+        painter.setPen(QPen(QGradient(QGradient.Preset.FebruaryInk), self.width()*0.003))
+        number_font.setPixelSize(round(self.width()*0.015))
+        painter.setFont(number_font)
+        painter.save()
+        painter.translate(center.x(), center.y())
+        painter.rotate(self.compromise_angle_half)
+        painter.translate(-center.x(), -center.y())
+        for a in range(1, self.for_loop_count-1):
+            painter.translate(center.x(), center.y())
+            painter.rotate(self.angle_to_rotate)
+            painter.translate(-center.x(), -center.y())
+            # spike
+            spike_p1 = center+QPointF(0, self.speedometer_bounding_rect.height()//2)
+            spike_p2 = center+QPointF(0, self.speedometer_bounding_rect.height()*0.47)
+            painter.drawLine(spike_p1, spike_p2)
+            # number
+            number_point = spike_p2.toPoint()-QPoint(0, round(self.width()*0.02))
+            if self.enable_sub_number:
+                painter.save()
+                painter.translate(number_point.x(), number_point.y())
+                painter.rotate(a*-self.angle_to_rotate-self.compromise_angle_half)
+                painter.translate(-number_point.x(), -number_point.y())
+                number_rect.moveCenter(number_point)
+                painter.drawText(number_rect, Qt.AlignmentFlag.AlignCenter, str((2*a-1)*10))
+                painter.restore()
+        painter.restore()
+
+        # drawing hand
+        painter.setPen(QPen(QGradient(QGradient.Preset.Blessing), round(self.width()*0.003), cap=Qt.PenCapStyle.RoundCap))
+        painter.setBrush(QBrush(QGradient(QGradient.Preset.Blessing)))
+        hand_polygon = (center + QPoint(0, round(self.height()*0.0055)), center + QPoint(0, -round(self.height()*0.0055)), center + QPoint(round(self.height()*0.28), 0))
+        painter.save()
+        painter.translate(center.x(), center.y())
+        painter.rotate(120+self.speed)
+        painter.translate(-center.x(), -center.y())
+        painter.drawPolygon(hand_polygon)
+        painter.restore()
+
+        # drawing center point
+        painter.setPen(QPen(QGradient(QGradient.Preset.CrystalRiver), round(self.width()*0.03), cap=Qt.PenCapStyle.RoundCap))
+        painter.drawPoint(center)
+
+        # drawing outer dial
+        painter.setPen(QPen(QGradient(QGradient.Preset.CrystalRiver), self.width()*0.005))
+        painter.drawArc(self.speedometer_bounding_rect.toRect(), -60*16, 300*16)
+
+        # drawing speed in word
+        painter.setPen(QPen(QGradient(QGradient.Preset.Crystalline), self.width()*0.005))
+        speed_font = QFont("Consolas", 0, 0, True)
+        speed_font.setPixelSize(round(self.width()*0.035))
+        speed_fm = QFontMetrics(speed_font)
+        # speed hm/h
+        speed_kmph_rect = speed_fm.boundingRect("000-km/h")
+        painter.setFont(speed_font)
+        speed_kmph_rect.moveCenter(center.toPoint())
+        speed_kmph_rect.moveBottom(round(self.speedometer_bounding_rect.bottom()))
+        painter.drawText(speed_kmph_rect, Qt.AlignmentFlag.AlignCenter, f'{self.get_speed()} km/h')
+        # speed
+        speed_word_rect = speed_fm.boundingRect("SPEED")
+        painter.setFont(speed_font)
+        speed_word_rect.moveCenter(center.toPoint())
+        speed_word_rect.moveBottom(round(self.speedometer_bounding_rect.bottom()-speed_kmph_rect.height()))
+        painter.drawText(speed_word_rect, Qt.AlignmentFlag.AlignCenter, "SPEED")
+
+
+
+    def start_up_animation(self):
+        self.other_visible = False
+
+        indicator_animation = QVariantAnimation(self)
+        indicator_animation.setStartValue(self.width())
+        indicator_animation.setEndValue(round(self.width()*0.03))
+        indicator_animation.valueChanged.connect(self.indicator_animation)
+        indicator_animation.setDuration(500)
+
+        header_animation = QVariantAnimation(self)
+        header_animation.setStartValue(0)
+        header_animation.setEndValue(round(self.scaled_header_border.boundingRect().height()))
+        header_animation.valueChanged.connect(self.header_animation)
+        header_animation.setDuration(300)
+
+        speedometer_popup_animation = QVariantAnimation(self)
+        speedometer_popup_animation.setStartValue(round(self.height()*1.01))
+        speedometer_popup_animation.setEndValue(round(self.height()*0.2))
+        speedometer_popup_animation.valueChanged.connect(self.speedometer_popup_animation)
+        speedometer_popup_animation.finished.connect(self.other_popup_animation)
+        speedometer_popup_animation.setDuration(500)
+
+        speedometer_animation1 = QVariantAnimation(self)
+        speedometer_animation1.setStartValue(0)
+        speedometer_animation1.setEndValue(300)
+        speedometer_animation1.valueChanged.connect(self.speedometer_animation)
+        speedometer_animation1.setDuration(1000)
+
+        speedometer_animation2 = QVariantAnimation(self)
+        speedometer_animation2.setStartValue(300)
+        speedometer_animation2.setEndValue(0)
+        speedometer_animation2.valueChanged.connect(self.speedometer_animation)
+        speedometer_animation2.setDuration(1000)
+
+        check_all_state_animation = QVariantAnimation(self)
+        check_all_state_animation.currentLoopChanged.connect(self.check_all_state_animation)
+        check_all_state_animation.setDuration(200)
+        check_all_state_animation.setLoopCount(10)
+
+        sa_speeddial_group = QSequentialAnimationGroup(self)
+        sa_speeddial_group.addAnimation(speedometer_animation1)
+        sa_speeddial_group.insertPause(1, 50)
+        sa_speeddial_group.addAnimation(speedometer_animation2)
+
+        pa_group = QParallelAnimationGroup(self)
+        pa_group.addAnimation(check_all_state_animation)
+        pa_group.addAnimation(sa_speeddial_group)
+
+        sa_group = QSequentialAnimationGroup(self)
+        sa_group.addAnimation(indicator_animation)
+        sa_group.addAnimation(header_animation)
+        sa_group.addAnimation(speedometer_popup_animation)
+        sa_group.addAnimation(pa_group)
+        sa_group.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def indicator_animation(self, pos):
+        self.scaled_header_border.translate(0, -self.scaled_header_border.boundingRect().y()-self.scaled_header_border.boundingRect().height())
+        self.scaled_header_inner.translate(0, -self.scaled_header_inner.boundingRect().y()-self.scaled_header_border.boundingRect().height())
+        # left indicator
+        self.scaled_left_idicator.translate(-self.scaled_left_idicator.boundingRect().x(), -self.scaled_left_idicator.boundingRect().y())
+        self.scaled_left_idicator.translate(pos, self.height()*0.06)
+        # right indicator
+        self.scaled_right_idicator.translate(-self.scaled_right_idicator.boundingRect().x(), -self.scaled_right_idicator.boundingRect().y())
+        self.scaled_right_idicator.translate(self.width()-self.scaled_right_idicator.boundingRect().width()-self.scaled_left_idicator.boundingRect().x(), self.height()*0.06)
+        self.repaint()
+
+    def header_animation(self, pos):
+        self.scaled_header_border.translate(0, -self.scaled_header_border.boundingRect().y()-self.scaled_header_border.boundingRect().height())
+        self.scaled_header_inner.translate(0, -self.scaled_header_inner.boundingRect().y()-self.scaled_header_border.boundingRect().height())
+        self.scaled_header_border.translate(0, pos)
+        self.scaled_header_inner.translate(0, pos)
+        self.repaint()
+
+    def speedometer_popup_animation(self, pos):
+        self.speedometer_bounding_rect.moveTop(pos)
+        self.repaint()
+
+    def other_popup_animation(self):
+        self.other_visible = True
+        self.repaint()
+
+    def speedometer_animation(self, val):
+        self.speed = val
+        self.repaint()
+
+    def check_all_state_animation(self, loop_count):
+        if loop_count == 1:
+            self.show_time = 1
+        elif loop_count == 2:
+            self.left_indicator_color = self.indicator_color_list[1]
+        elif loop_count == 3:
+            self.left_indicator_color = self.indicator_color_list[0]
+            self.header_border_color = 1
+        elif loop_count == 4:
+            self.header_border_color = 0
+            self.right_indicator_color = self.indicator_color_list[1]
+           
+
+            
+
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHints(_RENDER_HINTS, True)
+
+        linearGradient = QLinearGradient(self.rect().topLeft(), self.rect().bottomRight())
+        linearGradient.setColorAt(0.0, QColor(0, 0, 0))
+        linearGradient.setColorAt(1.0, QColor(0,0,0))
+        linearGradient.setColorAt(0.5, QColor(0,0,0))
+
+        painter.setBrush(linearGradient)
+        painter.drawRect(self.rect())
+
+        self.header_painting(painter)
+        self.indicators_painting(painter)
+        if self.other_visible:
+           
+            
+            
+            
+           self.speedometer_painting(painter)
+           
+class _DashBoardControls(QObject):
+    """WARNING: This is a private class. do not import this."""
+    set_speedometer_range_sig = pyqtSignal(int)
+
+    set_current_speed_signal = pyqtSignal(int)
+    set_speedometer_resetter_sig = pyqtSignal(int)
+   
+   
+    indicator_sig = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        global _dash_board
+        
+        self.required_values()
+
+        if _dash_board is not None:
+            self.dash_board = _dash_board
+            self.startup_values_setter()
+            if __name__ == "__main__":  # for install default key event if dashboard called in main thread
+                self.dash_board.installEventFilter(self.dash_board) 
+            self.all_connector()
+
+    def required_values(self):
+        self.dashboard_height = 1080
+        self.dashboard_width = 1920
+        self.creator_btn_hide = False
+        self.start_skip = False
+        self.loading_skip = False
+        self.speedometer_topspeed = 100
+        
+ 
+
+    def startup_values_setter(self):
+        self.dash_board.dash_board_design_widget.set_speedometer_range(self.speedometer_topspeed)
+
+    def launch_dashboard(self):
+        app = QApplication(sys.argv)
+        self.dash_board = _DashBoardMain(None, (self.dashboard_width, self.dashboard_height), \
+                                            self.creator_btn_hide, self.start_skip, self.loading_skip)
+        self.startup_values_setter()
+        if __name__ == "__main__":  # for install default key event if dashboard called in main thread
+            self.dash_board.installEventFilter(self.dash_board) 
+        self.all_connector()
+        self.dash_board.show()
+        app.exec()
+
+    def all_connector(self):
+        self.set_speedometer_range_sig.connect(self.dash_board.dash_board_design_widget.set_speedometer_range)
+        self.set_current_speed_signal.connect(self.dash_board.dash_board_design_widget.set_speed)
+        self.set_speedometer_resetter_sig.connect(self.dash_board.dash_board_design_widget.set_speedometer_resetter_state)
+        self.indicator_sig.connect(self.dash_board.dash_board_design_widget.indicator_triger)
+        
+    def set_dashboard_size(self, width, height):
+        self.dashboard_height = height
+        self.dashboard_width = width
+
+    def hide_creator_button(self, hide):
+        self.creator_btn_hide = hide
+
+    def skip_start_screen(self, skip):
+        self.start_skip = skip
+
+    def skip_loading_screen(self, skip):
+        self.loading_skip = skip
+
+    def set_speedometer_range(self, top_speed):
+        self.speedometer_scale = [i for i in range(0, top_speed + 1, 20)]  # Adjust step based on your preference
+
+        self.speedometer_topspeed = top_speed
+        self.set_speedometer_range_sig.emit(top_speed)
+
+
+
+    def set_speed(self, current_speed):
+        self.set_current_speed_signal.emit(current_speed)
+
+    def set_speedometer_resetter_state(self, state):
+        self.set_speedometer_resetter_sig.emit(state)
+
+
+
+class VirtualKeyboard(QDialog):
+    def __init__(self, parent=None):
+        super(VirtualKeyboard, self).__init__(parent, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setModal(True)
+        self.initUI()
+
+    def initUI(self):
+        self.layout = QGridLayout(self)
+        # Define and add buttons for keys
+        # For example:
+        keys = ['1', '2', '3', 'Q', 'W', 'E', 'A', 'S', 'D', 'Z', 'X', 'C']
+        for i, key in enumerate(keys):
+            btn = QPushButton(key, self)
+            btn.clicked.connect(lambda _, k=key: self.keyPressed(k))
+            self.layout.addWidget(btn, i // 3, i % 3)
+
+    def keyPressed(self, key):
+        # Emit signal or handle key press
+        print(f"Key Pressed: {key}")
+        if key == 'Your-Special-Key':  # Replace with your specific functionality
+            self.close()  # Close the keyboard dialog
+            
+
+class DashBoard(QWidget):
+    """This is a pyqt widget class to embed this dashboard to other pyqt widgets"""
+    def __init__(self, parent=None):
+        super(DashBoard, self).__init__(parent)
+        
+        self.vlayout = QVBoxLayout()
+        self.setLayout(self.vlayout)
+
+
+
+        self.initUI()
+
+
+
+    def showKeyboard(self):
+        if self.keyboardDialog.isVisible():
+            self.keyboardDialog.hide()
+        else:
+            self.keyboardDialog.show()
+class TriggerAction():
+    """This class contain all functionality settings of dashboard \
+        including lunch_dashboard() method to show dashboard as seperate window"""
+        
+    
+    def __init__(self):
+        self.__dbc = _DashBoardControls()
+
+    def launch_dashboard(self):
+        """Open dashboard window"""
+        self.__dbc.launch_dashboard()
+
+    def set_dashboard_size(self, width: int, height: int):
+        """Size should be aspect ratio of width:height = 16:9 \n note: this method should \
+            be called before you call launch_dashboard() method to take effect"""
+        if height is not None and width is not None:
+            self.__dbc.set_dashboard_size(width, height)
+
+    def hide_creator_button(self, hide: bool):
+        """To hide creator button on start screen \n note: this method should \
+            be called before you call launch_dashboard() method to take effect"""
+        self.__dbc.hide_creator_button(hide)
+
+    def skip_start_screen(self, skip: bool):
+        """Skip start screen and directly go to loding screen \n note: this method should \
+            be called before you call launch_dashboard() method to take effect"""
+        self.__dbc.skip_start_screen(skip)
+
+    def skip_loading_screen(self, skip: bool):
+        """Skip loading screen and directly go to dashboard screen \n note: this method should \
+            be called before you call launch_dashboard() method to take effect"""
+        self.__dbc.skip_loading_screen(skip)
+
+    def set_speedometer_range(self, top_speed: int):
+        """Set speedometer range (i.e.) 0 to top speed \n
+        Note: given value should be between 40 to 400 and the given value \
+        will internally converted to nearest multiple of 20"""
+        self.__dbc.set_speedometer_range(top_speed)
+
+
+
+    def set_speed(self, current_speed: int):
+        """The speed should be between 0 to top speed available in speedometer. To \
+        set speedometer range use set_speedometer_range() method \n note: if you have \
+        speedometer, then call set_speedometer_resetter_state() method and pass 'True' \
+        after call this set_speed() method and pass current speed value each time when \
+        speedometer update"""
+        self.__dbc.set_speed(current_speed)
+
+    def set_speedometer_resetter_state(self, state: bool):
+        """To turn on or off speedometer internal reset function to 0 kmph after accelerator release \n note: set state True when \
+        you did not have speedometer to update the current speed else set state False when you have speedometer to update current speed"""
+        self.__dbc.set_speedometer_resetter_state(state)
+
+    
+
+
+
+    def left_indicator_on_or_off(self):
+        """Blink left indicator \n note: call this function \
+            again to invert current state of left indicator"""
+        self.__dbc.left_indicator_on_or_off()
+
+    def right_indicator_on_or_off(self):
+        """Blink right indicator \n note: call this function \
+            again to invert current state of right indicator"""
+        self.__dbc.right_indicator_on_or_off()
+
+
+
+# main
+if __name__ == "__main__":
+    ta = TriggerAction()
+    ta.launch_dashboard()
+
+
+    app = QApplication(sys.argv)
+    mainWidget = DashBoard()
+    dashboard = _DashBoardMain(mainWidget)
+    mainWidget.layout().addWidget(dashboard)
+    mainWidget.show()
+    sys.exit(app.exec_())
